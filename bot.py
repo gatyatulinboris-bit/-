@@ -8,6 +8,8 @@ ALLOWED_USERS = {7299174753}  # ← замени на свой Telegram ID
 BOT_NAME = "василий"
 
 # === Приветствие ===
+async def greet_user(update, context):
+    await update.message.reply_text("Привет! Меня зовут Василий 👋 Какого поставщика найти для тебя?")
 async def handle_message(update, context):
     uid = update.effective_user.id
     text = update.message.text.strip()
