@@ -12,85 +12,109 @@ BOT_NAME = "василий"
 MEMORY_FILE = "memory.json"  # файл для хранения памяти
 
 
-# === Функции для работы с памятью ===
+# === Работа с памятью ===
 def load_memory():
-    """Загрузка истории из файла"""
     if os.path.exists(MEMORY_FILE):
         try:
             with open(MEMORY_FILE, "r", encoding="utf-8") as f:
                 return json.load(f)
         except json.JSONDecodeError:
-            return []
-    return []
+            return {}
+    return {}
 
 
-def save_memory(history):
-    """Сохранение истории в файл"""
+def save_memory(data):
     with open(MEMORY_FILE, "w", encoding="utf-8") as f:
-        json.dump(history[-10:], f, ensure_ascii=False, indent=2)  # храним последние 10 сообщений
+        json.dump(data, f, ensure_ascii=False, indent=2)
 
 
-# === Глобальная память ===
-conversation_history = load_memory()
+# === Инициализация памяти ===
+memory = load_memory()
+if "stage" not in memory:
+    memory["stage"] = "start"
+if "history" not in memory:
+    memory["history"] = []
 
 
 # === Приветствие ===
 async def greet_user(update, context):
+    memory["stage"] = "greeting"
+    save_memory(memory)
     await update.message.reply_text(
-        "Привет! Меня зовут Василий 👋\n"
-        "Помогаю искать производителей и поставщиков HVAC-оборудования.\n"
-        "Что нужно найти?"
+        "Здравствуйте. Василий — помощник по вентиляции и кондиционированию.\n"
+        "Помогаю находить поставщиков, производителей и оборудование.\n"
+        "Что именно нужно подобрать?"
     )
 
 
-# === Основная логика общения ===
+# === Основная логика ===
 async def handle_message(update, context):
     uid = update.effective_user.id
     text = update.message.text.strip()
 
-    # Проверяем доступ
+    # Проверка доступа
     if uid not in ALLOWED_USERS:
         await update.message.reply_text("🚫 Доступ закрыт.")
         return
 
-    # Приветствие
-    if text.lower().startswith(f"{BOT_NAME} привет"):
+    stage = memory.get("stage", "start")
+
+    # Этап 1: Приветствие
+    if stage == "start" or "привет" in text.lower():
         await greet_user(update, context)
         return
 
-    # Добавляем сообщение пользователя в память
-    conversation_history.append({"role": "user", "content": text})
-    save_memory(conversation_history)
-
-    # Проверяем запросы по ключевым словам
-    if "найди" in text.lower() or "постав" in text.lower():
-        await update.message.reply_text("🤖 Думаю над ответом...")
+    # Этап 2: Определяем запрос
+    if stage == "greeting":
+        memory["request"] = text
+        memory["stage"] = "searching"
+        save_memory(memory)
+        await update.message.reply_text("Принял. Сейчас подберу поставщиков...")
 
         try:
             completion = client.chat.completions.create(
                 model="gpt-4o-mini",
                 messages=[
                     {"role": "system", "content": (
-                        "Ты помощник HVAC-компании. "
-                        "Помогаешь искать производителей и поставщиков вентиляционного и климатического оборудования."
+                        "Ты — помощник HVAC-компании. "
+                        "Отвечай делово, по существу. "
+                        "Найди известных производителей или поставщиков по теме запроса. "
+                        "Формат ответа: список из 3–5 пунктов с краткими комментариями."
                     )},
-                    *conversation_history[-10:],  # подгружаем последние 10 сообщений
+                    {"role": "user", "content": text},
                 ],
             )
 
             answer = completion.choices[0].message.content
-            conversation_history.append({"role": "assistant", "content": answer})
-            save_memory(conversation_history)
+            memory["answer"] = answer
+            memory["stage"] = "confirm"
+            save_memory(memory)
 
             await update.message.reply_text(answer)
-
+            await update.message.reply_text("Это то, что вы искали, или уточнить направление?")
         except Exception as e:
-            await update.message.reply_text(f"⚠️ Ошибка при обращении к ИИ: {e}")
-
+            await update.message.reply_text(f"⚠️ Ошибка при поиске: {e}")
         return
 
-    # Если текст не подходит под ключевые слова
-    await update.message.reply_text("🧩 Я тебя услышал, подумаю, как помочь.")
+    # Этап 3: Подтверждение
+    if stage == "confirm":
+        if any(word in text.lower() for word in ["да", "верно", "подходит", "отлично", "спасибо"]):
+            await update.message.reply_text("Хорошо. Рад был помочь. Если потребуется расчёт или подбор — обращайтесь.")
+            memory["stage"] = "done"
+            save_memory(memory)
+            return
+        else:
+            memory["stage"] = "searching"
+            save_memory(memory)
+            await update.message.reply_text("Уточните, пожалуйста, что именно нужно — я скорректирую подбор.")
+            return
+
+    # Этап 4: Завершение
+    if stage == "done":
+        await update.message.reply_text("Если нужно будет что-то ещё — пишите, я на связи.")
+        memory["stage"] = "start"
+        save_memory(memory)
+        return
 
 
 # === Запуск ===
@@ -105,7 +129,7 @@ def main():
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
     print("🤖 Василий запущен и ждёт сообщений...")
-    app.run_polling()  # держит бота в работе
+    app.run_polling()
 
 
 if __name__ == "__main__":
