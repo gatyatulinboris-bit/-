@@ -47,4 +47,4 @@ async def handle_message(update, context):
         return
 
     # Всё остальное — эхо
-    await update.message.reply_text(f"Ты н_
+    await update.message.reply_text(f"Ты написал: {update.message.text}")
