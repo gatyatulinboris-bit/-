@@ -2,7 +2,7 @@ import os
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-ALLOWED_USERS = {12345678}  # ← замени на свой Telegram ID
+ALLOWED_USERS = {7299174753}  # ← замени на свой Telegram ID
 BOT_NAME = "василий"
 
 # === Приветствие ===
