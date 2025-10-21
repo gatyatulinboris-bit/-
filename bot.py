@@ -12,6 +12,17 @@ BOT_NAME = "василий"
 LOG_FILE = "dialog_history.json"
 DAYS_TO_KEEP = 30  # храним диалоги 30 дней
 
+# === Проверка и создание файла истории при запуске ===
+def ensure_log_file_exists():
+    """Создает пустой файл истории, если его нет"""
+    if not os.path.exists(LOG_FILE):
+        with open(LOG_FILE, "w", encoding="utf-8") as f:
+            json.dump([], f, ensure_ascii=False, indent=2)
+        print("[INFO] Файл истории диалогов не найден — создан новый dialog_history.json")
+    else:
+        print("[INFO] Файл истории диалогов найден ✅")
+
+
 # === Загрузка и сохранение истории ===
 def save_dialog(user_id, message, reply):
     """Сохраняет сообщение и очищает старые записи старше DAYS_TO_KEEP"""
@@ -109,6 +120,8 @@ def main():
     if not BOT_TOKEN:
         print("❌ Ошибка: BOT_TOKEN не найден!")
         return
+
+    ensure_log_file_exists()  # Проверяем или создаём файл истории
 
     print("✅ Василий запускается...")
     app = ApplicationBuilder().token(BOT_TOKEN).build()
