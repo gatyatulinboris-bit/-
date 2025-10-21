@@ -3,27 +3,27 @@ import json
 import time
 from datetime import datetime, timedelta
 from openai import OpenAI
-from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters
-import telegram.error
+from telegram import Update
+from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes, filters
+from aiohttp import web
 
 # === Настройки ===
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+client = OpenAI(api_key=OPENAI_API_KEY)
 ALLOWED_USERS = {7299174753}  # ← твой Telegram ID
 BOT_NAME = "василий"
 LOG_FILE = "dialog_history.json"
 DAYS_TO_KEEP = 30  # храним диалоги 30 дней
-
 
 # === Проверка и создание файла истории ===
 def ensure_log_file_exists():
     if not os.path.exists(LOG_FILE):
         with open(LOG_FILE, "w", encoding="utf-8") as f:
             json.dump([], f, ensure_ascii=False, indent=2)
-        print("[INFO] Файл истории диалогов не найден — создан новый dialog_history.json")
+        print("[INFO] Файл истории диалогов создан (dialog_history.json)")
     else:
-        print("[INFO] Файл истории диалогов найден ✅")
-
+        print("[INFO] Файл истории найден ✅")
 
 # === Сохранение истории ===
 def save_dialog(user_id, message, reply):
@@ -54,18 +54,16 @@ def save_dialog(user_id, message, reply):
     with open(LOG_FILE, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
 
-
 # === Приветствие ===
-async def greet_user(update, context):
+async def greet_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "Здравствуйте! Я Василий — помощник по поиску поставщиков и производителей в России 🇷🇺.\n"
         "Помогаю находить надёжных партнёров в строительстве, HVAC, автопроме, продуктах, одежде и других сферах.\n\n"
         "Что именно нужно найти?"
     )
 
-
 # === Основная логика ===
-async def handle_message(update, context):
+async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
     text = update.message.text.strip()
 
@@ -107,36 +105,30 @@ async def handle_message(update, context):
     # непонятный контекст
     await update.message.reply_text("Можете уточнить, что именно нужно найти? Например: 'поставщик диффузоров в Москве'.")
 
-
-# === Запуск ===
-def start_bot():
+# === Запуск через Webhook (Render) ===
+async def main():
     ensure_log_file_exists()
+    app = ApplicationBuilder().token(BOT_TOKEN).build()
+    app.add_handler(CommandHandler("start", greet_user))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+
+    # webhook для Render
+    PORT = int(os.environ.get("PORT", 8443))
+    WEBHOOK_URL = f"https://{os.environ.get('RENDER_EXTERNAL_URL')}/{BOT_TOKEN}"
+    await app.bot.set_webhook(WEBHOOK_URL)
+
+    print(f"🚀 Василий запущен! Webhook активен: {WEBHOOK_URL}")
+
+    web_app = web.Application()
+    web_app.router.add_post(f'/{BOT_TOKEN}', app.webhook_handler)
+    runner = web.AppRunner(web_app)
+    await runner.setup()
+    site = web.TCPSite(runner, "0.0.0.0", PORT)
+    await site.start()
 
     while True:
-        try:
-            print("✅ Василий запускается...")
-            app = ApplicationBuilder().token(BOT_TOKEN).build()
-            app.add_handler(CommandHandler("start", greet_user))
-            app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-
-            print("🤖 Василий запущен и ждёт сообщений...")
-            app.run_polling()
-
-        except telegram.error.Conflict:
-            print("⚠️ Конфликт с другим экземпляром (бот уже запущен). Перезапуск через 10 секунд...")
-            time.sleep(10)
-            continue
-
-        except telegram.error.NetworkError:
-            print("🌐 Проблемы с подключением к Telegram API. Перезапуск через 15 секунд...")
-            time.sleep(15)
-            continue
-
-        except Exception as e:
-            print(f"❌ Неизвестная ошибка: {e}. Перезапуск через 20 секунд...")
-            time.sleep(20)
-            continue
-
+        await asyncio.sleep(3600)
 
 if __name__ == "__main__":
-    start_bot()
+    import asyncio
+    asyncio.run(main())
