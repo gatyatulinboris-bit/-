@@ -22,4 +22,3 @@ async def greet_user(update, context):
     )
 
 # === Основная логика общения ===
-a
