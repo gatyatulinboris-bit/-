@@ -5,6 +5,7 @@ from datetime import datetime, timedelta
 from openai import OpenAI
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes, filters
+import aiohttp
 
 # === Логирование ===
 logging.basicConfig(level=logging.INFO)
@@ -98,25 +99,50 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"⚠️ Ошибка: {e}")
 
 
+# === Проверка webhook ===
+async def check_webhook(bot_token):
+    url = f"https://api.telegram.org/bot{bot_token}/getWebhookInfo"
+    async with aiohttp.ClientSession() as session:
+        async with session.get(url) as response:
+            info = await response.json()
+            print(f"[DEBUG] Текущее состояние webhook:")
+            print(json.dumps(info, indent=2, ensure_ascii=False))
+            return info
+
+
 # === Запуск ===
 async def main():
     ensure_log_file_exists()
-    app = ApplicationBuilder().token(BOT_TOKEN).build()
 
+    app = ApplicationBuilder().token(BOT_TOKEN).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
-    # --- Webhook ---
     webhook_url = f"{RENDER_EXTERNAL_URL}/{BOT_TOKEN}"
     print(f"[BOOT] Устанавливаю webhook: {webhook_url}")
 
-    await app.bot.set_webhook(url=webhook_url)
+    try:
+        await app.bot.set_webhook(url=webhook_url)
+        info = await check_webhook(BOT_TOKEN)
+
+        if info.get("ok") and info["result"].get("url") == webhook_url:
+            print(f"[OK] Webhook успешно установлен ✅")
+        else:
+            print(f"[WARN] Webhook не совпадает или не установлен корректно ⚠️")
+            print(json.dumps(info, indent=2, ensure_ascii=False))
+
+    except Exception as e:
+        print(f"[ERROR] Не удалось установить webhook: {e}")
+
+    print("🤖 Василий запущен, ожидаю сообщения...")
+
     await app.run_webhook(
         listen="0.0.0.0",
         port=int(os.environ.get("PORT", 10000)),
         url_path=BOT_TOKEN,
         webhook_url=webhook_url
     )
+
 
 if __name__ == "__main__":
     import asyncio
