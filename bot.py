@@ -6,24 +6,30 @@ from openai import OpenAI
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes, filters
 from aiohttp import web
+import asyncio
 
 # === Настройки ===
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-client = OpenAI(api_key=OPENAI_API_KEY)
-ALLOWED_USERS = {7299174753}  # ← твой Telegram ID
-BOT_NAME = "василий"
+OPENAI_KEY = os.getenv("OPENAI_API_KEY")
+RENDER_EXTERNAL_URL = os.getenv("RENDER_EXTERNAL_URL")
+
+client = OpenAI(api_key=OPENAI_KEY)
+
+ALLOWED_USERS = {7299174753}  # ← сюда свой Telegram ID
+BOT_NAME = "Василий"
 LOG_FILE = "dialog_history.json"
 DAYS_TO_KEEP = 30  # храним диалоги 30 дней
+
 
 # === Проверка и создание файла истории ===
 def ensure_log_file_exists():
     if not os.path.exists(LOG_FILE):
         with open(LOG_FILE, "w", encoding="utf-8") as f:
             json.dump([], f, ensure_ascii=False, indent=2)
-        print("[INFO] Файл истории диалогов создан (dialog_history.json)")
+        print("[INFO] Создан новый файл истории dialog_history.json ✅")
     else:
         print("[INFO] Файл истории найден ✅")
+
 
 # === Сохранение истории ===
 def save_dialog(user_id, message, reply):
@@ -38,7 +44,6 @@ def save_dialog(user_id, message, reply):
         except json.JSONDecodeError:
             data = []
 
-    # фильтруем старые записи
     data = [
         d for d in data
         if datetime.strptime(d.get("timestamp", "1970-01-01 00:00:00"), "%Y-%m-%d %H:%M:%S") >= cutoff_date
@@ -54,6 +59,7 @@ def save_dialog(user_id, message, reply):
     with open(LOG_FILE, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
 
+
 # === Приветствие ===
 async def greet_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
@@ -62,7 +68,8 @@ async def greet_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "Что именно нужно найти?"
     )
 
-# === Основная логика ===
+
+# === Обработка сообщений ===
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
     text = update.message.text.strip()
@@ -71,12 +78,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("🚫 У вас нет доступа к Василию.")
         return
 
-    # приветствия
     if any(word in text.lower() for word in ["привет", "здравствуй", "добрый день", "хай"]):
         await update.message.reply_text("Здравствуйте 👋 Я Василий. Что нужно найти?")
         return
 
-    # запрос на поиск
     if any(word in text.lower() for word in ["найди", "ищи", "поставщик", "производитель", "где купить", "закупка", "купить", "искать"]):
         await update.message.reply_text("🤖 Думаю над ответом, подбираю варианты...")
 
@@ -87,14 +92,13 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     {"role": "system", "content": (
                         "Ты — Василий, умный ассистент по закупкам в России. "
                         "Ты ищешь и предлагаешь 2–3 реальных варианта поставщиков или производителей по запросу. "
-                        "Отвечай кратко, по делу, без лишней воды. "
+                        "Отвечай кратко, по делу, без воды. "
                         "Если точных данных нет — предложи направления поиска: регионы, отрасли, сайты."
                     )},
                     {"role": "user", "content": text}
                 ]
             )
             answer = completion.choices[0].message.content.strip()
-
             await update.message.reply_text(answer)
             save_dialog(uid, text, answer)
 
@@ -102,33 +106,49 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text(f"⚠️ Ошибка при обращении к ИИ: {e}")
         return
 
-    # непонятный контекст
     await update.message.reply_text("Можете уточнить, что именно нужно найти? Например: 'поставщик диффузоров в Москве'.")
 
-# === Запуск через Webhook (Render) ===
+
+# === Основной запуск ===
 async def main():
     ensure_log_file_exists()
+
     app = ApplicationBuilder().token(BOT_TOKEN).build()
     app.add_handler(CommandHandler("start", greet_user))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
-    # webhook для Render
-    PORT = int(os.environ.get("PORT", 8443))
-    WEBHOOK_URL = f"https://{os.environ.get('RENDER_EXTERNAL_URL')}/{BOT_TOKEN}"
-    await app.bot.set_webhook(WEBHOOK_URL)
+    # === Настройка webhook ===
+    if RENDER_EXTERNAL_URL:
+        webhook_url = f"{RENDER_EXTERNAL_URL}/{BOT_TOKEN}"
+        print(f"[BOOT] Устанавливаю webhook: {webhook_url}")
+        await app.bot.set_webhook(url=webhook_url)
+    else:
+        print("[BOOT] ⚠️ Переменная RENDER_EXTERNAL_URL не задана, бот запустится в режиме polling")
+        await app.run_polling()
+        return
 
-    print(f"🚀 Василий запущен! Webhook активен: {WEBHOOK_URL}")
+    # === Запуск веб-сервера для Render ===
+    async def handle(request):
+        return web.Response(text="✅ Vasiliy bot is running")
 
-    web_app = web.Application()
-    web_app.router.add_post(f'/{BOT_TOKEN}', app.webhook_handler)
-    runner = web.AppRunner(web_app)
+    server = web.Application()
+    server.router.add_get("/", handle)
+
+    port = int(os.environ.get("PORT", 10000))
+    runner = web.AppRunner(server)
     await runner.setup()
-    site = web.TCPSite(runner, "0.0.0.0", PORT)
+    site = web.TCPSite(runner, "0.0.0.0", port)
     await site.start()
 
-    while True:
-        await asyncio.sleep(3600)
+    print(f"[BOOT] Василий запущен на порту {port} и ждёт сообщений...")
+
+    # === Запуск webhook слушателя ===
+    await app.start()
+    await asyncio.Event().wait()  # чтобы бот не завершался
+
 
 if __name__ == "__main__":
-    import asyncio
-    asyncio.run(main())
+    try:
+        asyncio.run(main())
+    except Exception as e:
+        print(f"❌ Ошибка запуска: {e}")
