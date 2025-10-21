@@ -1,4 +1,5 @@
 import os
+import json
 from openai import OpenAI
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters
 
@@ -8,9 +9,29 @@ client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 ALLOWED_USERS = {7299174753}  # ← замени на свой Telegram ID
 BOT_NAME = "василий"
+MEMORY_FILE = "memory.json"  # файл для хранения памяти
 
-# === Глобальная память диалога ===
-conversation_history = []  # хранит последние 10 сообщений
+
+# === Функции для работы с памятью ===
+def load_memory():
+    """Загрузка истории из файла"""
+    if os.path.exists(MEMORY_FILE):
+        try:
+            with open(MEMORY_FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except json.JSONDecodeError:
+            return []
+    return []
+
+
+def save_memory(history):
+    """Сохранение истории в файл"""
+    with open(MEMORY_FILE, "w", encoding="utf-8") as f:
+        json.dump(history[-10:], f, ensure_ascii=False, indent=2)  # храним последние 10 сообщений
+
+
+# === Глобальная память ===
+conversation_history = load_memory()
 
 
 # === Приветствие ===
@@ -32,12 +53,16 @@ async def handle_message(update, context):
         await update.message.reply_text("🚫 Доступ закрыт.")
         return
 
-    # Если пользователь просто здоровается
+    # Приветствие
     if text.lower().startswith(f"{BOT_NAME} привет"):
         await greet_user(update, context)
         return
 
-    # Если сообщение связано с поиском или поставкой
+    # Добавляем сообщение пользователя в память
+    conversation_history.append({"role": "user", "content": text})
+    save_memory(conversation_history)
+
+    # Проверяем запросы по ключевым словам
     if "найди" in text.lower() or "постав" in text.lower():
         await update.message.reply_text("🤖 Думаю над ответом...")
 
@@ -45,29 +70,27 @@ async def handle_message(update, context):
             completion = client.chat.completions.create(
                 model="gpt-4o-mini",
                 messages=[
-                    {
-                        "role": "system",
-                        "content": (
-                            "Ты помощник HVAC-компании. "
-                            "Помогаешь искать производителей и поставщиков "
-                            "вентиляционного и климатического оборудования."
-                        ),
-                    },
-                    {"role": "user", "content": text},
+                    {"role": "system", "content": (
+                        "Ты помощник HVAC-компании. "
+                        "Помогаешь искать производителей и поставщиков вентиляционного и климатического оборудования."
+                    )},
+                    *conversation_history[-10:],  # подгружаем последние 10 сообщений
                 ],
             )
 
             answer = completion.choices[0].message.content
+            conversation_history.append({"role": "assistant", "content": answer})
+            save_memory(conversation_history)
+
             await update.message.reply_text(answer)
 
         except Exception as e:
             await update.message.reply_text(f"⚠️ Ошибка при обращении к ИИ: {e}")
+
         return
 
-    # Если ничего не подошло — нейтральный ответ
-    if not any(word in text.lower() for word in ["найди", "постав", "закажи", "ищу"]):
-        # Василий просто молчит или отвечает мягко
-        await update.message.reply_text("🧩 Я тебя услышал, думаю, чем могу помочь.")
+    # Если текст не подходит под ключевые слова
+    await update.message.reply_text("🧩 Я тебя услышал, подумаю, как помочь.")
 
 
 # === Запуск ===
@@ -82,7 +105,7 @@ def main():
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
     print("🤖 Василий запущен и ждёт сообщений...")
-    app.run_polling()  # ← обязательная строка для постоянной работы
+    app.run_polling()  # держит бота в работе
 
 
 if __name__ == "__main__":
