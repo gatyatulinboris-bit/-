@@ -1,18 +1,12 @@
 import os
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters
 
-# === Твой токен подтягивается из переменных окружения (мы добавим его на Render) ===
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-
-# === Белый список пользователей (добавь свой Telegram ID) ===
-ALLOWED_USERS = {7299174753}  # ← замени на свой ID, полученный через @userinfobot
-
-# === Имя бота ===
+ALLOWED_USERS = {12345678}  # ← замени на свой Telegram ID
 BOT_NAME = "василий"
 
 # === Приветствие ===
 async def greet_user(update, context):
-    """Обрабатывает /start или фразу 'Василий Привет'."""
     uid = update.effective_user.id
     if uid not in ALLOWED_USERS:
         await update.message.reply_text("🚫 Доступ только по приглашению.")
@@ -23,28 +17,41 @@ async def greet_user(update, context):
         "Какого поставщика найти для тебя?"
     )
 
-# === Основной обработчик сообщений ===
+# === Обработка сообщений ===
 async def handle_message(update, context):
     uid = update.effective_user.id
-    text = update.message.text.strip().lower()
+    text = update.message.text.strip()
 
-    # Проверка доступа
     if uid not in ALLOWED_USERS:
         await update.message.reply_text("🚫 Доступ закрыт.")
         return
 
-    # Если пользователь написал 'Василий привет' → приветствие
-    if text.startswith(f"{BOT_NAME} привет"):
+    if text.lower().startswith(f"{BOT_NAME} привет"):
         await greet_user(update, context)
         return
 
-    # Если пользователь просит найти поставщика
-    if "найди" in text and "постав" in text:
+    if "найди" in text.lower() and "постав" in text.lower():
         await update.message.reply_text(
-            f"🔍 Ищу поставщиков по запросу:\n«{update.message.text}»\n"
-            "⏳ (пока заглушка — позже подключим ИИ и реальный поиск)"
+            f"🔍 Ищу поставщиков по запросу:\n«{text}»\n"
+            "⏳ (пока заглушка — позже подключим ИИ)"
         )
         return
 
-    # Всё остальное — эхо
-    await update.message.reply_text(f"Ты написал: {update.message.text}")
+    await update.message.reply_text(f"Ты написал: {text}")
+
+# === Запуск ===
+def main():
+    if not BOT_TOKEN:
+        print("❌ Ошибка: BOT_TOKEN не найден!")
+        return
+
+    print("✅ Василий запускается...")
+    app = ApplicationBuilder().token(BOT_TOKEN).build()
+    app.add_handler(CommandHandler("start", greet_user))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+
+    print("🤖 Василий запущен и ждёт сообщений...")
+    app.run_polling()  # — эта строка держит процесс в режиме ожидания
+
+if __name__ == "__main__":
+    main()
