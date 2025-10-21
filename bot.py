@@ -1,8 +1,10 @@
 import os
+from openai import OpenAI
 import openai
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
+client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 openai.api_key = os.getenv("OPENAI_API_KEY")
 ALLOWED_USERS = {7299174753}  # ← замени на свой Telegram ID
 BOT_NAME = "василий"
@@ -25,15 +27,15 @@ async def handle_message(update, context):
     if "найди" in text.lower() or "постав" in text.lower():
         await update.message.reply_text("🤖 Думаю над ответом...")
         try:
-            completion = openai.ChatCompletion.create(
-                model="gpt-3.5-turbo",
-                messages=[
-                    {"role": "system", "content": "Ты помощник HVAC-компании. Помогаешь искать производителей и поставщиков вентиляционного и климатического оборудования."},
-                    {"role": "user", "content": text}
-                ]
-            )
-            answer = completion.choices[0].message["content"]
-            await update.message.reply_text(answer)
+completion = client.chat.completions.create(
+    model="gpt-3.5-turbo",
+    messages=[
+        {"role": "system", "content": "Ты помощник HVAC-компании. Помогаешь искать производителей и поставщиков вентиляционного и климатического оборудования."},
+        {"role": "user", "content": text}
+    ]
+)
+answer = completion.choices[0].message.content
+await update.message.reply_text(answer)
         except Exception as e:
             await update.message.reply_text(f"⚠️ Ошибка при обращении к ИИ: {e}")
         return
