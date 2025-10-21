@@ -24,20 +24,20 @@ async def handle_message(update, context):
         await greet_user(update, context)
         return
 
-    if "найди" in text.lower() or "постав" in text.lower():
-        await update.message.reply_text("🤖 Думаю над ответом...")
-        try:
-completion = client.chat.completions.create(
-    model="gpt-3.5-turbo",
-    messages=[
-        {"role": "system", "content": "Ты помощник HVAC-компании. Помогаешь искать производителей и поставщиков вентиляционного и климатического оборудования."},
-        {"role": "user", "content": text}
-    ]
-)
-answer = completion.choices[0].message.content
-await update.message.reply_text(answer)
-        except Exception as e:
-            await update.message.reply_text(f"⚠️ Ошибка при обращении к ИИ: {e}")
+if "найди" in text.lower() or "постав" in text.lower():
+    await update.message.reply_text("🤖 Думаю над ответом...")
+    try:
+        completion = client.chat.completions.create(
+            model="gpt-3.5-turbo",
+            messages=[
+                {"role": "system", "content": "Ты помощник HVAC-компании. Помогаешь искать производителей и поставщиков вентиляционного и климатического оборудования."},
+                {"role": "user", "content": text}
+            ]
+        )
+        answer = completion.choices[0].message.content
+        await update.message.reply_text(answer)
+    except Exception as e:
+        await update.message.reply_text(f"⚠️ Ошибка при обращении к ИИ: {e}")
         return
 
     await update.message.reply_text(f"Ты написал: {text}")
