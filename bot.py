@@ -1,23 +1,13 @@
 import os
+import openai
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
+openai.api_key = os.getenv("OPENAI_API_KEY")
 ALLOWED_USERS = {7299174753}  # ← замени на свой Telegram ID
 BOT_NAME = "василий"
 
 # === Приветствие ===
-async def greet_user(update, context):
-    uid = update.effective_user.id
-    if uid not in ALLOWED_USERS:
-        await update.message.reply_text("🚫 Доступ только по приглашению.")
-        return
-
-    await update.message.reply_text(
-        "Привет! Меня зовут Василий 👋\n"
-        "Какого поставщика найти для тебя?"
-    )
-
-# === Обработка сообщений ===
 async def handle_message(update, context):
     uid = update.effective_user.id
     text = update.message.text.strip()
@@ -30,11 +20,20 @@ async def handle_message(update, context):
         await greet_user(update, context)
         return
 
-    if "найди" in text.lower() and "постав" in text.lower():
-        await update.message.reply_text(
-            f"🔍 Ищу поставщиков по запросу:\n«{text}»\n"
-            "⏳ (пока заглушка — позже подключим ИИ)"
-        )
+    if "найди" in text.lower() or "постав" in text.lower():
+        await update.message.reply_text("🤖 Думаю над ответом...")
+        try:
+            completion = openai.ChatCompletion.create(
+                model="gpt-3.5-turbo",
+                messages=[
+                    {"role": "system", "content": "Ты помощник HVAC-компании. Помогаешь искать производителей и поставщиков вентиляционного и климатического оборудования."},
+                    {"role": "user", "content": text}
+                ]
+            )
+            answer = completion.choices[0].message["content"]
+            await update.message.reply_text(answer)
+        except Exception as e:
+            await update.message.reply_text(f"⚠️ Ошибка при обращении к ИИ: {e}")
         return
 
     await update.message.reply_text(f"Ты написал: {text}")
