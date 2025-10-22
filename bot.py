@@ -1,3 +1,6 @@
+import sys
+import logging
+logging.basicConfig(stream=sys.stdout, level=logging.INFO)
 import os
 import json
 import asyncio
