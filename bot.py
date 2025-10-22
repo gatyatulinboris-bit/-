@@ -33,18 +33,24 @@ def webhook():
 
         update = Update.de_json(data, bot)
 
-        loop = asyncio.get_event_loop()
+        # 🧩 Создаем новый event loop, если текущий не существует
+        try:
+            loop = asyncio.get_event_loop()
+        except RuntimeError:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+
         if loop.is_closed():
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
 
-        # Добавляем задачу в текущий event loop
+        # 🟢 Запускаем асинхронную обработку апдейта
         loop.create_task(application.process_update(update))
 
     except Exception as e:
         import traceback
         print("❌ Ошибка при обработке апдейта:", e)
-        print(traceback.format_exc())  # выведет полный стек ошибки
+        print(traceback.format_exc())
         return "error", 500
 
     return "ok", 200
