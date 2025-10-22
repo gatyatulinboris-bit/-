@@ -81,13 +81,17 @@ if __name__ == "__main__":
         await bot.set_webhook(url=f"{WEBHOOK_URL}/{BOT_TOKEN}")
         print(f"✅ Вебхук установлен: {WEBHOOK_URL}/{BOT_TOKEN}")
 
-    asyncio.run(set_webhook())
+    # Устанавливаем вебхук и запускаем Telegram-приложение
+    async def main():
+        await set_webhook()
+        print("🚀 Василий готов к работе!")
+        await application.initialize()
+        await application.start()
+        await application.updater.start_webhook(
+            listen="0.0.0.0",
+            port=int(os.environ.get("PORT", 10000)),
+            url_path=BOT_TOKEN,
+            webhook_url=f"{WEBHOOK_URL}/{BOT_TOKEN}"
+        )
 
-    # Запускаем Telegram-обработчик в отдельном потоке
-    threading.Thread(
-        target=lambda: application.run_polling(allowed_updates=Update.ALL_TYPES),
-        daemon=True
-    ).start()
-
-    # Flask принимает вебхуки от Telegram
-    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))
+    asyncio.run(main())
