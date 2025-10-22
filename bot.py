@@ -1,9 +1,9 @@
 import os
 import json
+import asyncio
 from flask import Flask, request
 from telegram import Update, Bot
 from telegram.ext import Application, CommandHandler, MessageHandler, filters
-import asyncio
 import openai
 
 # === Настройки ===
@@ -19,18 +19,28 @@ app = Flask(__name__)
 
 @app.route('/')
 def home():
-    return "✅ Василий работает!"
+    return "✅ Василий работает и слушает Telegram!"
+
 
 @app.route(f'/{BOT_TOKEN}', methods=['POST'])
 def webhook():
-    data = request.get_json(force=True)
-    print("📩 Получен апдейт от Telegram:", json.dumps(data, ensure_ascii=False, indent=2))
-    update = Update.de_json(data, bot)
-    asyncio.run(application.process_update(update))
-    return 'ok'
+    try:
+        data = request.get_json(force=True)
+        print("📩 Получен апдейт от Telegram:", json.dumps(data, ensure_ascii=False, indent=2))
+
+        update = Update.de_json(data, bot)
+
+        # обрабатываем апдейт асинхронно
+        asyncio.run(application.process_update(update))
+
+    except Exception as e:
+        print("❌ Ошибка при обработке апдейта:", e)
+        return "error", 500
+
+    return "ok", 200
 
 
-# === Telegram логика ===
+# === Логика Telegram ===
 async def start(update, context):
     await update.message.reply_text(
         "Здравствуйте! Я Василий 🤖.\n"
@@ -68,8 +78,10 @@ application.add_handler(CommandHandler("start", start))
 application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
 
-# === Запуск вебхука ===
+# === Инициализация и запуск ===
 async def main():
+    print("🌀 Инициализация приложения Telegram...")
+    await application.initialize()
     await bot.delete_webhook()
     await bot.set_webhook(url=f"{WEBHOOK_URL}/{BOT_TOKEN}")
     print(f"✅ Вебхук установлен: {WEBHOOK_URL}/{BOT_TOKEN}")
