@@ -2,7 +2,7 @@ import os
 import json
 from datetime import datetime
 from flask import Flask, request
-from openai import OpenAI
+import openai
 from telegram import Bot, Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters
 
@@ -11,7 +11,7 @@ BOT_TOKEN = os.getenv("BOT_TOKEN")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 WEBHOOK_URL = os.getenv("RENDER_EXTERNAL_URL")  # https://vasiliy-bot.onrender.com
 
-client = OpenAI(api_key=OPENAI_API_KEY)
+openai.api_key = OPENAI_API_KEY
 bot = Bot(token=BOT_TOKEN)
 
 # === Flask сервер ===
@@ -38,20 +38,19 @@ async def start(update, context):
 
 async def handle_message(update, context):
     text = update.message.text
-    uid = update.effective_user.id
 
     if any(w in text.lower() for w in ["найди", "ищи", "поставщик", "где купить", "производитель"]):
         await update.message.reply_text("🔍 Ищу варианты, секундочку...")
 
         try:
-            completion = client.chat.completions.create(
-                model="gpt-4o-mini",
+            response = openai.ChatCompletion.create(
+                model="gpt-3.5-turbo",
                 messages=[
-                    {"role": "system", "content": "Ты — помощник по поиску поставщиков в России."},
+                    {"role": "system", "content": "Ты — помощник по поиску поставщиков и производителей в России."},
                     {"role": "user", "content": text}
                 ]
             )
-            reply = completion.choices[0].message.content.strip()
+            reply = response["choices"][0]["message"]["content"].strip()
             await update.message.reply_text(reply)
 
         except Exception as e:
@@ -68,7 +67,6 @@ application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_m
 
 # === Запуск на Render ===
 if __name__ == "__main__":
-    # Устанавливаем webhook при запуске
     import asyncio
 
     async def set_webhook():
@@ -78,5 +76,4 @@ if __name__ == "__main__":
 
     asyncio.run(set_webhook())
 
-    # Flask слушает порт Render’а
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))
