@@ -80,9 +80,6 @@ async def handle_message(update, context):
 
 
 # === Telegram приложение ===
-application = Application.builder().token(BOT_TOKEN).build()
-application.add_handler(CommandHandler("start", start))
-application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 from telegram import Update
 from telegram.ext import Application, MessageHandler, CommandHandler, filters, ContextTypes
 
@@ -93,8 +90,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     print(f"💬 Получено сообщение от {user.first_name}: {text}")
     await context.bot.send_message(chat_id=update.effective_chat.id, text="Привет! Я жив 🟢")
 
-# --- Создание приложения ---
+# --- Создание приложения и добавление обработчиков ---
 application = Application.builder().token(BOT_TOKEN).build()
+application.add_handler(CommandHandler("start", start))
 application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
 # === Асинхронная инициализация и запуск ===
