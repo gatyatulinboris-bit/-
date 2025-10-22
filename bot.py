@@ -21,46 +21,32 @@ app = Flask(__name__)
 def home():
     return "✅ Василий работает и слушает Telegram!"
 
-
 @app.route(f'/{BOT_TOKEN}', methods=['POST'])
 def webhook():
     try:
         data = request.get_json(force=True)
         print("📩 Получен апдейт от Telegram:", json.dumps(data, ensure_ascii=False, indent=2))
-
         update = Update.de_json(data, bot)
-
-        # обрабатываем апдейт асинхронно
         asyncio.run(application.process_update(update))
-
     except Exception as e:
         print("❌ Ошибка при обработке апдейта:", e)
         return "error", 500
-
     return "ok", 200
 
 
-# === Логика Telegram ===
+# === Telegram логика ===
 async def start(update, context):
-    await update.message.reply_text(
-        "Здравствуйте! Я Василий 🤖.\n"
-        "Помогаю искать поставщиков и производителей в России.\n"
-        "Что нужно найти?"
-    )
+    await update.message.reply_text("Здравствуйте! Я Василий 🤖. Что хотите найти?")
 
 async def handle_message(update, context):
     text = update.message.text.strip()
     if any(w in text.lower() for w in ["найди", "ищи", "поставщик", "где купить", "производитель"]):
-        await update.message.reply_text("🔍 Думаю над ответом, секундочку...")
-
+        await update.message.reply_text("🔍 Думаю над ответом...")
         try:
             response = openai.ChatCompletion.create(
                 model="gpt-3.5-turbo",
                 messages=[
-                    {"role": "system", "content": (
-                        "Ты — Василий, помощник по поиску поставщиков и производителей в России. "
-                        "Отвечай кратко, по делу, предлагай 2–3 направления поиска или конкретных поставщиков."
-                    )},
+                    {"role": "system", "content": "Ты — помощник по поиску поставщиков в России."},
                     {"role": "user", "content": text}
                 ]
             )
@@ -69,24 +55,31 @@ async def handle_message(update, context):
         except Exception as e:
             await update.message.reply_text(f"⚠️ Ошибка при обращении к OpenAI: {e}")
     else:
-        await update.message.reply_text("Уточните, что нужно найти, например: 'поставщик бетона в Москве'.")
+        await update.message.reply_text("Напишите, что искать, например: 'поставщик бетона в Москве'.")
 
 
-# === Настройка Telegram ===
+# === Telegram приложение ===
 application = Application.builder().token(BOT_TOKEN).build()
 application.add_handler(CommandHandler("start", start))
 application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
 
-# === Инициализация и запуск ===
+# === Асинхронная инициализация и запуск ===
 async def main():
-    print("🌀 Инициализация приложения Telegram...")
+    print("🌀 Инициализация Telegram-приложения...")
     await application.initialize()
+
+    print("🔧 Удаление старого вебхука...")
     await bot.delete_webhook()
-    await bot.set_webhook(url=f"{WEBHOOK_URL}/{BOT_TOKEN}")
-    print(f"✅ Вебхук установлен: {WEBHOOK_URL}/{BOT_TOKEN}")
-    print("🚀 Василий готов к работе!")
+
+    webhook_url = f"{WEBHOOK_URL}/{BOT_TOKEN}"
+    print(f"🌐 Установка нового вебхука: {webhook_url}")
+    await bot.set_webhook(url=webhook_url)
+
+    print("✅ Telegram-приложение инициализировано и вебхук установлен.")
+    print("🚀 Запуск Flask-сервера...")
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))
+
 
 if __name__ == "__main__":
     asyncio.run(main())
-    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))
