@@ -25,7 +25,9 @@ def home():
 def webhook():
     try:
         data = request.get_json(force=True)
-        print("📩 Получен апдейт от Telegram:", json.dumps(data, ensure_ascii=False, indent=2))
+        print("📩 Получен апдейт от Telegram:")
+        print(json.dumps(data, ensure_ascii=False, indent=2))
+
         update = Update.de_json(data, bot)
 
         loop = asyncio.get_event_loop()
@@ -33,10 +35,13 @@ def webhook():
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
 
+        # Добавляем задачу в текущий event loop
         loop.create_task(application.process_update(update))
 
     except Exception as e:
+        import traceback
         print("❌ Ошибка при обработке апдейта:", e)
+        print(traceback.format_exc())  # выведет полный стек ошибки
         return "error", 500
 
     return "ok", 200
