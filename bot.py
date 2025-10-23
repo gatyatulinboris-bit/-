@@ -1,118 +1,79 @@
 import os
-import json
-import asyncio
-from datetime import datetime, timedelta
-from telegram import Update
-from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
+from flask import Flask, request
+from telegram import Bot, Update, ParseMode
+from telegram.ext import Dispatcher, CommandHandler, MessageHandler, Filters
 
-# ===== Конфигурация =====
-BOT_TOKEN = os.getenv("BOT_TOKEN", "").strip()
-ADMIN_ID = 7299174753  # доступ только тебе
-DIALOG_FILE = "dialog_history.json"
-SUPPLIERS_FILE = "suppliers.json"
-DAYS_TO_KEEP = 30
+# --- Конфиг ---
+BOT_TOKEN = os.getenv("BOT_TOKEN", "8396494240:AAG3rJjtm6CXCqfrq8XgOGSncI_bYNe0Cwc")
+ALLOWED_USERS = {7299174753}  # Допуск по ID
 
-def ensure_file(path: str, default):
-    if not os.path.exists(path):
-        with open(path, "w", encoding="utf-8") as f:
-            json.dump(default, f, ensure_ascii=False, indent=2)
+# --- Flask + Telegram ---
+app = Flask(__name__)
+bot = Bot(token=BOT_TOKEN)
+# Dispatcher из PTB v13 — синхронный, без asyncio, идеально для Render Free
+dispatcher = Dispatcher(bot, update_queue=None, workers=0, use_context=True)
 
-def update_suppliers_seed():
-    ensure_file(SUPPLIERS_FILE, [])
-    with open(SUPPLIERS_FILE, "r", encoding="utf-8") as f:
-        data = json.load(f)
-    if not data:
-        data.extend([
-            {"name": "СтройМаркет", "category": "цемент",     "region": "Москва",        "contact": "stroymarket.ru"},
-            {"name": "БетонСнаб",   "category": "бетон",      "region": "Санкт-Петербург","contact": "betonsnab.ru"},
-            {"name": "АрмаРус",     "category": "арматура",   "region": "Екатеринбург",  "contact": "armarus.ru"},
-            {"name": "КирпичПроф",  "category": "кирпич",     "region": "Казань",        "contact": "kirpichprof.ru"},
-            {"name": "ТехСтрой",    "category": "сухие смеси","region": "Новосибирск",   "contact": "tehstroi.ru"}
-        ])
-        with open(SUPPLIERS_FILE, "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
 
-def save_dialog(user_id: int, text: str, reply: str):
-    ensure_file(DIALOG_FILE, [])
-    # читаем
+# --- Хелперы доступа ---
+def is_allowed(update: Update) -> bool:
     try:
-        with open(DIALOG_FILE, "r", encoding="utf-8") as f:
-            data = json.load(f)
-    except json.JSONDecodeError:
-        data = []
-    # чистим старые
-    cutoff = datetime.now() - timedelta(days=DAYS_TO_KEEP)
-    data = [
-        d for d in data
-        if datetime.strptime(d.get("timestamp", "1970-01-01 00:00:00"), "%Y-%m-%d %H:%M:%S") >= cutoff
-    ]
-    # добавляем новую запись
-    data.append({
-        "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-        "user_id": user_id,
-        "text": text,
-        "reply": reply
-    })
-    with open(DIALOG_FILE, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
+        uid = update.effective_user.id
+        return uid in ALLOWED_USERS
+    except Exception:
+        return False
 
-def find_suppliers(query: str):
-    with open(SUPPLIERS_FILE, "r", encoding="utf-8") as f:
-        suppliers = json.load(f)
-    q = query.lower()
-    # простое совпадение по категории
-    found = [s for s in suppliers if s["category"] in q]
-    return found[:3]
 
-# === Хендлеры ===
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_user.id != ADMIN_ID:
-        await update.message.reply_text("🚫 Доступ запрещён. Обратитесь к администратору.")
+# --- Хендлеры ---
+def start(update, context):
+    if not is_allowed(update):
+        update.message.reply_text("🚫 Доступ ограничен. Обратитесь к администратору.")
         return
-    msg = ("Здравствуйте! Я Василий — помощник по поиску строительных поставщиков в России.\n"
-           "Что именно нужно найти? Укажите категорию и регион (например: «цемент Москва»).")
-    await update.message.reply_text(msg)
+    update.message.reply_text(
+        "Здравствуйте! Я Василий — помощник по поиску поставщиков в строительстве (Россия). "
+        "Напишите, что именно нужно найти."
+    )
 
-async def on_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    text = (update.message.text or "").strip()
-    if user_id != ADMIN_ID:
-        await update.message.reply_text("🚫 У вас нет доступа к этому боту.")
+
+def handle_text(update, context):
+    if not is_allowed(update):
+        update.message.reply_text("🚫 Доступ ограничен. Обратитесь к администратору.")
         return
 
-    print(f"[LOG] Запрос от {user_id}: {text}")
-    results = find_suppliers(text)
-    if results:
-        reply = "Нашёл поставщиков:\n\n" + "\n".join(
-            [f"🏗 {s['name']} — {s['category']} ({s['region']})\n🌐 {s['contact']}" for s in results]
-        )
-    else:
-        reply = "Пока не нашёл. Добавляю кандидата в базу и продолжу накапливать варианты."
-        # добавим «черновой» элемент под запрос
-        ensure_file(SUPPLIERS_FILE, [])
-        with open(SUPPLIERS_FILE, "r+", encoding="utf-8") as f:
-            arr = json.load(f)
-            arr.append({
-                "name": f"Новый поставщик {len(arr)+1}",
-                "category": text.lower(),
-                "region": "Россия",
-                "contact": "—"
-            })
-            f.seek(0); json.dump(arr, f, ensure_ascii=False, indent=2); f.truncate()
+    text = update.message.text.strip()
 
-    await update.message.reply_text(reply)
-    save_dialog(user_id, text, reply)
+    # Пока MVP: короткий «заглушка»-ответ по строительным поставщикам.
+    # (Позже подключим поиск и базу)
+    reply = (
+        "Понял запрос: *{}*\n"
+        "Я ищу строительных поставщиков по России. На старте выдам 2-3 варианта и уточню детали.\n"
+        "_Скоро добавим обновляемую базу и умный поиск._"
+    ).format(text)
 
-# === Запуск (Long Polling, без вебхуков) ===
-async def main():
-    if not BOT_TOKEN:
-        raise RuntimeError("BOT_TOKEN не задан в Environment Variables.")
-    update_suppliers_seed()
-    app = Application.builder().token(BOT_TOKEN).build()
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, on_text))
-    print("🤖 Василий запущен. Ожидаю запросы (long polling)…")
-    await app.run_polling(allowed_updates=Update.ALL_TYPES)
+    update.message.reply_text(reply, parse_mode=ParseMode.MARKDOWN)
+
+
+# --- Регистрация хендлеров ---
+dispatcher.add_handler(CommandHandler("start", start))
+dispatcher.add_handler(MessageHandler(Filters.text & ~Filters.command, handle_text))
+
+
+# --- Webhook endpoints ---
+@app.route("/", methods=["GET"])
+def index():
+    return "Vasiliy-bot is alive", 200
+
+
+@app.route(f"/{BOT_TOKEN}", methods=["POST"])
+def webhook():
+    try:
+        data = request.get_json(force=True)
+        update = Update.de_json(data, bot)
+        dispatcher.process_update(update)
+    except Exception as e:
+        print("Webhook error:", e)
+    return "OK", 200
+
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    # Локальный запуск (на Render не используется, запускается startCommand)
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))
