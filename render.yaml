@@ -5,3 +5,6 @@ services:
     plan: free
     buildCommand: "pip install -r requirements.txt"
     startCommand: "python bot.py"
+    envVars:
+      - key: BOT_TOKEN
+        value: 8396494240:AAG3rJjtm6CXCqfrq8XgOGSncI_bYNe0Cwc
